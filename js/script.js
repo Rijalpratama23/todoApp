@@ -1,5 +1,34 @@
 const todos = [];
 const RENDER_EVENT = 'render-todo';
+const SAVED_EVENT = 'saved-todo';
+const STORAGE_KEY = 'TODO_APPS';
+
+// Mengecek dukungan Local Storage pada browser
+function isStorageExist() {
+  return typeof Storage !== 'undefined';
+}
+
+// Menyimpan data ke Local Storage
+function saveData() {
+  if (isStorageExist()) {
+    const parsed = JSON.stringify(todos);
+    localStorage.setItem(STORAGE_KEY, parsed);
+    document.dispatchEvent(new Event(SAVED_EVENT));
+  }
+}
+
+// Memuat data dari Local Storage
+function loadDataFromStorage() {
+  const serializedData = localStorage.getItem(STORAGE_KEY);
+  let data = JSON.parse(serializedData);
+
+  if (data !== null) {
+    for (const todo of data) {
+      todos.push(todo);
+    }
+  }
+  document.dispatchEvent(new Event(RENDER_EVENT));
+}
 
 // Menjalankan event saat halaman dimuat
 document.addEventListener('DOMContentLoaded', function () {
@@ -7,7 +36,13 @@ document.addEventListener('DOMContentLoaded', function () {
   formSubmit.addEventListener('submit', function (event) {
     event.preventDefault();
     addTodo();
+    document.getElementById('title').value = '';
+    document.getElementById('date').value = '';
   });
+
+  if (isStorageExist()) {
+    loadDataFromStorage();
+  }
 });
 
 // Menambahkan tugas baru ke dalam daftar
@@ -25,8 +60,6 @@ function addTodo() {
   todos.push(todoObject);
 
   document.dispatchEvent(new Event(RENDER_EVENT));
-
-  document.dispatchEvent(new Event(RENDER_EVENT));
   saveData();
 }
 
@@ -40,23 +73,55 @@ function generateTodoObject(id, task, timeStamp, isCompleted) {
   return { id, task, timeStamp, isCompleted };
 }
 
-// Menjalankan event RENDER_EVENT untuk merender ulang daftar tugas
-document.addEventListener(RENDER_EVENT, function () {
-  const uncompletedTODOList = document.getElementById('todos'); // "Yang harus dilakukan"
-  const completedTODOList = document.getElementById('completed-todos'); // "Yang sudah dilakukan"
-
-  uncompletedTODOList.innerHTML = '';
-  completedTODOList.innerHTML = '';
-
+// Mencari tugas berdasarkan ID
+function findTodo(todoId) {
   for (const todoItem of todos) {
-    const todoElement = makeTodo(todoItem);
-    if (!todoItem.isCompleted) {
-      uncompletedTODOList.append(todoElement);
-    } else {
-      completedTODOList.append(todoElement);
+    if (todoItem.id === todoId) {
+      return todoItem;
     }
   }
-});
+  return null;
+}
+
+// Mencari indeks tugas berdasarkan ID
+function findTodoIndex(todoId) {
+  for (const index in todos) {
+    if (todos[index].id === todoId) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+// Memindahkan tugas ke daftar "Yang sudah dilakukan"
+function addTaskToCompleted(todoId) {
+  const todoTarget = findTodo(todoId);
+  if (todoTarget === null) return;
+
+  todoTarget.isCompleted = true;
+  document.dispatchEvent(new Event(RENDER_EVENT));
+  saveData();
+}
+
+// Memindahkan tugas kembali ke daftar "Yang harus dilakukan"
+function undoTaskFromCompleted(todoId) {
+  const todoTarget = findTodo(todoId);
+  if (todoTarget === null) return;
+
+  todoTarget.isCompleted = false;
+  document.dispatchEvent(new Event(RENDER_EVENT));
+  saveData();
+}
+
+// Menghapus tugas dari daftar
+function removeTodo(todoId) {
+  const todoTargetIndex = findTodoIndex(todoId);
+  if (todoTargetIndex === -1) return;
+
+  todos.splice(todoTargetIndex, 1);
+  document.dispatchEvent(new Event(RENDER_EVENT));
+  saveData();
+}
 
 // Membuat elemen tugas dalam bentuk HTML
 function makeTodo(todoObject) {
@@ -75,108 +140,62 @@ function makeTodo(todoObject) {
   container.append(textContainer);
   container.setAttribute('id', `todo-${todoObject.id}`);
 
+  // Menambahkan tombol aksi
+  const actionContainer = document.createElement('div');
+  actionContainer.classList.add('action');
+
   if (todoObject.isCompleted) {
-    // Tombol Undo untuk memindahkan tugas kembali ke daftar belum selesai
+    // Tombol Undo dan Trash untuk tugas yang sudah selesai
     const undoButton = document.createElement('button');
     undoButton.classList.add('undo-button');
     undoButton.innerText = '↩';
-
     undoButton.addEventListener('click', function () {
       undoTaskFromCompleted(todoObject.id);
     });
 
-    // Tombol Trash untuk menghapus tugas
     const trashButton = document.createElement('button');
     trashButton.classList.add('trash-button');
     trashButton.innerText = '🗑';
-
     trashButton.addEventListener('click', function () {
       removeTodo(todoObject.id);
     });
+    actionContainer.append(undoButton, trashButton);
 
-    container.append(undoButton, trashButton);
   } else {
-    // Tombol centang untuk memindahkan tugas ke daftar sudah selesai
+    // Tombol Centang dan Trash untuk tugas yang belum selesai
     const checkButton = document.createElement('button');
     checkButton.classList.add('check-button');
     checkButton.innerText = '✔';
-
     checkButton.addEventListener('click', function () {
       addTaskToCompleted(todoObject.id);
     });
 
-    // Tombol Trash untuk menghapus tugas
     const trashButton = document.createElement('button');
     trashButton.classList.add('trash-button');
     trashButton.innerText = '🗑';
-
     trashButton.addEventListener('click', function () {
       removeTodo(todoObject.id);
     });
-
-    container.append(checkButton, trashButton);
+    actionContainer.append(checkButton, trashButton);
   }
-
+  container.append(actionContainer);
   return container;
 }
 
-// Mencari tugas berdasarkan ID
-function findTodo(todoId) {
-  return todos.find((todo) => todo.id === todoId) || null;
-}
+// Menjalankan event RENDER_EVENT untuk merender ulang daftar tugas
+document.addEventListener(RENDER_EVENT, function () {
+  const uncompletedTODOList = document.getElementById('todos');
+  const completedTODOList = document.getElementById('completed-todos');
 
-// Memindahkan tugas ke daftar "Yang sudah dilakukan"
-function addTaskToCompleted(todoId) {
-  const todo = findTodo(todoId);
-  if (todo) {
-    todo.isCompleted = true;
-    document.dispatchEvent(new Event(RENDER_EVENT));
+  uncompletedTODOList.innerHTML = '';
+  completedTODOList.innerHTML = '';
+
+  for (const todoItem of todos) {
+    const todoElement = makeTodo(todoItem);
+    if (!todoItem.isCompleted) {
+      uncompletedTODOList.append(todoElement);
+    } else {
+      completedTODOList.append(todoElement);
+    }
   }
-  document.dispatchEvent(new Event(RENDER_EVENT));
-  saveData();
-}
-
-// Memindahkan tugas kembali ke daftar "Yang harus dilakukan"
-function undoTaskFromCompleted(todoId) {
-  const todo = findTodo(todoId);
-  if (todo) {
-    todo.isCompleted = false;
-    document.dispatchEvent(new Event(RENDER_EVENT));
-  }
-  document.dispatchEvent(new Event(RENDER_EVENT));
-  saveData();
-}
-
-// Menghapus tugas dari daftar
-function removeTodo(todoId) {
-  const todoIndex = todos.findIndex((todo) => todo.id === todoId);
-  if (todoIndex !== -1) {
-    todos.splice(todoIndex, 1);
-    document.dispatchEvent(new Event(RENDER_EVENT));
-  }
-  document.dispatchEvent(new Event(RENDER_EVENT));
-  saveData();
-}
-
-function saveData() {
-  if (isStorageExist()) {
-    const parsed = JSON.stringify(todos);
-    localStorage.setItem(STORAGE_KEY, parsed);
-    document.dispatchEvent(new Event(SAVED_EVENT));
-  }
-}
-
-const SAVED_EVENT = 'saved-todo';
-const STORAGE_KEY = 'TODO_APPS';
-
-function isStorageExist() /* boolean */ {
-  if (typeof Storage === undefined) {
-    alert('Browser kamu tidak mendukung local storage');
-    return false;
-  }
-  return true;
-}
-
-document.addEventListener(SAVED_EVENT, function () {
-    console.log(localStorage.getItem(STORAGE_KEY));
-  });
+});
